@@ -1,7 +1,11 @@
+"use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import * as THREE from "three";
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   AIRPORTS
+───────────────────────────────────────────────────────────────────────────── */
 const AIRPORTS = {
   MIA: { lat: 25.796,  lon: -80.287,  city: "Miami" },
   JFK: { lat: 40.641,  lon: -73.778,  city: "New York" },
@@ -81,6 +85,9 @@ const AIRPORTS = {
   ISB: { lat: 33.617,  lon:  73.099,  city: "Islamabad" },
 };
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   MATH HELPERS
+───────────────────────────────────────────────────────────────────────────── */
 function latLonToVec3(lat, lon, radius = 1) {
   const phi   = THREE.MathUtils.degToRad(90 - lat);
   const theta = THREE.MathUtils.degToRad(lon);
@@ -111,9 +118,20 @@ function projectToScreen(worldPt, camera, W, H) {
   return { x: (v.x * 0.5 + 0.5) * W, y: (v.y * -0.5 + 0.5) * H, visible: v.z < 1 };
 }
 
-// ─── FIX 1: Plane icon drawn pointing UP (nose at canvas top = +Y in sprite UV).
-// The rotation math uses atan2(dx, dy) which rotates this nose toward the travel
-// direction. So the icon MUST have its nose pointing UP (low Y in canvas coords).
+/* ─────────────────────────────────────────────────────────────────────────────
+   RESPONSIVE BREAKPOINT HELPER — runs only client-side
+───────────────────────────────────────────────────────────────────────────── */
+function getBreakpoint(w) {
+  if (w < 380)  return "xs";      // tiny phones
+  if (w < 480)  return "sm";      // phones
+  if (w < 768)  return "md";      // large phones / small tablets
+  if (w < 1024) return "lg";      // tablets / small laptops
+  return "xl";                    // desktops
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PLANE TEXTURE  – nose drawn at TOP so atan2(dx,dy) rotation works correctly
+───────────────────────────────────────────────────────────────────────────── */
 function makePlaneTexture() {
   const sz  = 256;
   const c   = document.createElement("canvas");
@@ -127,29 +145,26 @@ function makePlaneTexture() {
   ctx.shadowColor = "rgba(255,255,255,0.9)";
   ctx.shadowBlur  = 20;
 
-  // Fuselage — nose at TOP (low Y), tail at BOTTOM (high Y)
   ctx.beginPath();
-  ctx.moveTo(cx, 20);                                          // nose tip (top)
-  ctx.bezierCurveTo(cx+9, 60, cx+10, 130, cx+8, 190);         // right side
+  ctx.moveTo(cx, 20);
+  ctx.bezierCurveTo(cx+9, 60, cx+10, 130, cx+8, 190);
   ctx.lineTo(cx, 182);
-  ctx.lineTo(cx-8, 190);                                       // left side
+  ctx.lineTo(cx-8, 190);
   ctx.bezierCurveTo(cx-10, 130, cx-9, 60, cx, 20);
   ctx.closePath();
   ctx.fill();
 
-  // Wings — at ~40 % from top, swept toward tail (higher Y = toward bottom)
   ctx.beginPath();
-  ctx.moveTo(cx-6,  90);     // left wing root, leading edge
-  ctx.lineTo(cx-115, 158);   // left wingtip
-  ctx.lineTo(cx-100, 172);   // left wingtip trailing
-  ctx.lineTo(cx+2,   128);   // root trailing edge
-  ctx.lineTo(cx+100, 172);   // right wingtip trailing
-  ctx.lineTo(cx+115, 158);   // right wingtip
-  ctx.lineTo(cx+6,   90);    // right wing root, leading edge
+  ctx.moveTo(cx-6,  90);
+  ctx.lineTo(cx-115, 158);
+  ctx.lineTo(cx-100, 172);
+  ctx.lineTo(cx+2,   128);
+  ctx.lineTo(cx+100, 172);
+  ctx.lineTo(cx+115, 158);
+  ctx.lineTo(cx+6,   90);
   ctx.closePath();
   ctx.fill();
 
-  // Tail fins — small, near bottom
   ctx.beginPath();
   ctx.moveTo(cx-4, 172);
   ctx.lineTo(cx-44, 214);
@@ -164,48 +179,209 @@ function makePlaneTexture() {
   return new THREE.CanvasTexture(c);
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   RESPONSIVE CONFIG
+   Returns all layout/scene values derived from screen width.
+   Called only on the client after mount.
+───────────────────────────────────────────────────────────────────────────── */
+function getResponsiveConfig(w, h) {
+  const bp = getBreakpoint(w);
+
+  // Portrait vs landscape on mobile
+  const isPortrait = h > w;
+
+  const configs = {
+    xs: {
+      // Camera — tighter FOV + closer distance shows more of the globe
+      fov: 50,
+      camDist: 2.10,
+      // Globe is rendered in top 60% of the screen on portrait
+      // Use a viewport offset so globe center is shifted up
+      globeOffsetY: isPortrait ? -0.08 : 0,
+      planeScale: 0.14,
+      bottomBarHeight: 110,
+      airportCodeSize: "22px",
+      cityNameSize: "9px",
+      bottomPad: "12px 14px 18px",
+      labelOffset: 8,
+      labelDotSize: 5,
+      labelFontSize: "10px",
+      statusDotSize: "6px",
+      statusFontSize: "10px",
+      brandTopSize: "9px",
+      brandSubSize: "8px",
+      brandTop: "10px",
+      doneCardPad: "16px 22px",
+      doneCodeSize: "18px",
+      doneSubSize: "10px",
+    },
+    sm: {
+      fov: 46,
+      camDist: 2.20,
+      globeOffsetY: isPortrait ? -0.06 : 0,
+      planeScale: 0.13,
+      bottomBarHeight: 120,
+      airportCodeSize: "26px",
+      cityNameSize: "10px",
+      bottomPad: "12px 16px 20px",
+      labelOffset: 10,
+      labelDotSize: 6,
+      labelFontSize: "11px",
+      statusDotSize: "6px",
+      statusFontSize: "10px",
+      brandTopSize: "10px",
+      brandSubSize: "8px",
+      brandTop: "12px",
+      doneCardPad: "18px 26px",
+      doneCodeSize: "20px",
+      doneSubSize: "10px",
+    },
+    md: {
+      fov: 42,
+      camDist: 2.40,
+      globeOffsetY: isPortrait ? -0.04 : 0,
+      planeScale: 0.11,
+      bottomBarHeight: 130,
+      airportCodeSize: "32px",
+      cityNameSize: "11px",
+      bottomPad: "14px 22px 22px",
+      labelOffset: 12,
+      labelDotSize: 7,
+      labelFontSize: "11px",
+      statusDotSize: "6px",
+      statusFontSize: "11px",
+      brandTopSize: "10px",
+      brandSubSize: "9px",
+      brandTop: "16px",
+      doneCardPad: "20px 32px",
+      doneCodeSize: "24px",
+      doneSubSize: "11px",
+    },
+    lg: {
+      fov: 40,
+      camDist: 2.65,
+      globeOffsetY: 0,
+      planeScale: 0.105,
+      bottomBarHeight: 140,
+      airportCodeSize: "38px",
+      cityNameSize: "11px",
+      bottomPad: "0 28px 28px",
+      labelOffset: 13,
+      labelDotSize: 7,
+      labelFontSize: "12px",
+      statusDotSize: "6px",
+      statusFontSize: "11px",
+      brandTopSize: "10px",
+      brandSubSize: "9px",
+      brandTop: "20px",
+      doneCardPad: "22px 42px",
+      doneCodeSize: "26px",
+      doneSubSize: "11px",
+    },
+    xl: {
+      fov: 38,
+      camDist: 2.85,
+      globeOffsetY: 0,
+      planeScale: 0.10,
+      bottomBarHeight: 150,
+      airportCodeSize: "clamp(28px, 3.5vw, 44px)",
+      cityNameSize: "clamp(10px, 1vw, 12px)",
+      bottomPad: "0 32px 32px",
+      labelOffset: 14,
+      labelDotSize: 8,
+      labelFontSize: "clamp(10px, 1vw, 12px)",
+      statusDotSize: "6px",
+      statusFontSize: "clamp(10px, 1vw, 12px)",
+      brandTopSize: "clamp(9px, 0.8vw, 11px)",
+      brandSubSize: "clamp(8px, 0.7vw, 10px)",
+      brandTop: "clamp(14px, 2.5vw, 28px)",
+      doneCardPad: "clamp(16px,2.5vw,26px) clamp(24px,4.5vw,52px)",
+      doneCodeSize: "clamp(18px,3vw,28px)",
+      doneSubSize: "clamp(10px,1vw,12px)",
+    },
+  };
+
+  return { bp, ...configs[bp] };
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   COMPONENT
+───────────────────────────────────────────────────────────────────────────── */
 export default function GlobePage() {
   const router   = useRouter();
   const mountRef = useRef(null);
 
-  const cameraRef       = useRef(null);
-  const rendererRef     = useRef(null);
-  const globeGroupRef   = useRef(null);
-  const fromVecLocalRef = useRef(null);
-  const toVecLocalRef   = useRef(null);
+  const cameraRef        = useRef(null);
+  const rendererRef      = useRef(null);
+  const globeGroupRef    = useRef(null);
+  const fromVecLocalRef  = useRef(null);
+  const toVecLocalRef    = useRef(null);
+  const configRef        = useRef(null);   // live responsive config
+  const planeSpriteRef   = useRef(null);
+  const planeMatRef      = useRef(null);
 
-  // ─── FIX 2: All state that differs between SSR and client is initialised to
-  //   a "safe" value that SSR also renders, so React never sees a mismatch.
-  //   We flip isMounted → true inside useEffect (client-only), which makes
-  //   opacity transitions fire only after hydration.
+  // ── State — all SSR-safe defaults ────────────────────────────────────────
   const [phase,     setPhase]     = useState("rotating");
   const [fromPos,   setFromPos]   = useState(null);
   const [toPos,     setToPos]     = useState(null);
   const [showDots,  setShowDots]  = useState(false);
   const [dots,      setDots]      = useState(0);
   const [isMounted, setIsMounted] = useState(false);
+  // cfg is null on SSR, populated after mount — prevents hydration mismatch
+  const [cfg,       setCfg]       = useState(null);
 
-  // Mark client-only once, after first paint
-  useEffect(() => { setIsMounted(true); }, []);
+  // Set isMounted + initial cfg only after first client paint
+  useEffect(() => {
+    setIsMounted(true);
+    const c = getResponsiveConfig(window.innerWidth, window.innerHeight);
+    setCfg(c);
+    configRef.current = c;
+  }, []);
 
-  // Dots ticker — client only, wrapped in isMounted guard so server never runs it
+  // Dots ticker
   useEffect(() => {
     if (!isMounted) return;
     const id = setInterval(() => setDots(d => (d + 1) % 4), 500);
     return () => clearInterval(id);
   }, [isMounted]);
 
+  // Responsive resize — update cfg state + renderer + camera + plane scale
+  useEffect(() => {
+    if (!isMounted) return;
+    const onResize = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const next = getResponsiveConfig(w, h);
+      setCfg(next);
+      configRef.current = next;
+
+      if (cameraRef.current && rendererRef.current) {
+        cameraRef.current.fov    = next.fov;
+        cameraRef.current.aspect = w / h;
+        cameraRef.current.position.z = next.camDist;
+        cameraRef.current.updateProjectionMatrix();
+        rendererRef.current.setSize(w, h);
+      }
+      if (planeSpriteRef.current) {
+        const s = next.planeScale;
+        planeSpriteRef.current.scale.set(s, s, s);
+      }
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [isMounted]);
+
   const updateOverlays = useCallback(() => {
     if (!cameraRef.current || !rendererRef.current || !globeGroupRef.current) return;
-    const W = rendererRef.current.domElement.clientWidth;
-    const H = rendererRef.current.domElement.clientHeight;
+    const W  = rendererRef.current.domElement.clientWidth;
+    const H  = rendererRef.current.domElement.clientHeight;
     const fW = fromVecLocalRef.current?.clone().applyQuaternion(globeGroupRef.current.quaternion);
     const tW = toVecLocalRef.current?.clone().applyQuaternion(globeGroupRef.current.quaternion);
     if (fW) setFromPos(projectToScreen(fW, cameraRef.current, W, H));
     if (tW) setToPos(projectToScreen(tW, cameraRef.current, W, H));
   }, []);
 
-  // Pull query params — safe defaults so SSR and first client render match
+  // Pull query params with safe defaults
   const {
     from: qFrom, to: qTo,
     fromCity: qFromCity, toCity: qToCity,
@@ -219,6 +395,7 @@ export default function GlobePage() {
   const depart   = qDepart   || "Soon";
   const query    = qQuery    || "";
 
+  // ── Three.js scene ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!router.isReady) return;
     const container = mountRef.current;
@@ -227,10 +404,13 @@ export default function GlobePage() {
     const W = container.clientWidth  || window.innerWidth;
     const H = container.clientHeight || window.innerHeight;
 
-    // ── Scene setup ──────────────────────────────────────────────────────────
+    // Use live configRef so initial scene config matches current viewport
+    const initCfg = getResponsiveConfig(W, H);
+    configRef.current = initCfg;
+
     const scene  = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(38, W / H, 0.1, 1000);
-    camera.position.set(0, 0, 2.85);
+    const camera = new THREE.PerspectiveCamera(initCfg.fov, W / H, 0.1, 1000);
+    camera.position.set(0, 0, initCfg.camDist);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -323,7 +503,7 @@ export default function GlobePage() {
     const midLocal   = new THREE.Vector3().addVectors(fromVecLocal, toVecLocal).normalize();
     const targetQuat = new THREE.Quaternion().setFromUnitVectors(midLocal, new THREE.Vector3(0,0,1));
 
-    // Surface arc points — stays ON globe
+    // Surface arc points
     const ARC_SEG   = 300;
     const PLANE_R   = RADIUS + 0.004;
     const arcPoints = buildSurfaceArcPoints(fromVecLocal, toVecLocal, ARC_SEG)
@@ -356,7 +536,7 @@ export default function GlobePage() {
     toDot.visible   = false;
     globeGroup.add(fromDot, toDot);
 
-    // Path line — drawn incrementally as plane moves
+    // Path line
     const pathPositions = new Float32Array((ARC_SEG + 1) * 3);
     arcPoints.forEach((p, i) => {
       pathPositions[i*3]   = p.x;
@@ -373,18 +553,21 @@ export default function GlobePage() {
     globeGroup.add(pathLine);
 
     // Plane sprite
-    const planeTex = makePlaneTexture();
-    const planeMat = new THREE.SpriteMaterial({
+    const planeTex    = makePlaneTexture();
+    const planeMat    = new THREE.SpriteMaterial({
       map: planeTex, transparent: true, depthTest: false, sizeAttenuation: true,
     });
-    const planeSprite = new THREE.Sprite(planeMat);
-    planeSprite.scale.set(0.10, 0.10, 0.10);
-    const planeGroup = new THREE.Group();
+    planeMatRef.current = planeMat;
+    const planeSprite   = new THREE.Sprite(planeMat);
+    planeSpriteRef.current = planeSprite;
+    const s = initCfg.planeScale;
+    planeSprite.scale.set(s, s, s);
+    const planeGroup  = new THREE.Group();
     planeGroup.add(planeSprite);
     planeGroup.visible = false;
     scene.add(planeGroup);
 
-    // ── Animation ────────────────────────────────────────────────────────────
+    // ── Animation loop ───────────────────────────────────────────────────────
     let animPhase = "rotating";
     let rotProg   = 0;
     let arcProg   = 0;
@@ -403,7 +586,6 @@ export default function GlobePage() {
       if (animPhase === "rotating") {
         rotProg = Math.min(rotProg + dt * 0.55, 1);
         globeGroup.quaternion.slerpQuaternions(startQuat, targetQuat, easeInOutCubic(rotProg));
-
         if (rotProg >= 1) {
           animPhase = "drawing";
           fromDot.visible  = true;
@@ -418,7 +600,6 @@ export default function GlobePage() {
         const steps = Math.floor(easeOutQuad(arcProg) * ARC_SEG);
         pathGeo.setDrawRange(0, steps + 1);
         pathGeo.attributes.position.needsUpdate = true;
-
         if (arcProg >= 1) {
           animPhase = "flying";
           planeGroup.visible = true;
@@ -427,30 +608,19 @@ export default function GlobePage() {
 
       } else if (animPhase === "flying") {
         flyProg = Math.min(flyProg + dt * 0.22, 1);
-
         const idx  = Math.floor(flyProg * (ARC_SEG - 1));
-        // ─── FIX 1: look ONE step AHEAD (not behind) so nose points toward "To"
         const idxN = Math.min(idx + 1, ARC_SEG - 1);
 
         const worldPos  = arcPoints[idx].clone().applyQuaternion(globeGroup.quaternion);
         const worldPosN = arcPoints[idxN].clone().applyQuaternion(globeGroup.quaternion);
-
         planeGroup.position.copy(worldPos);
 
         const rW = renderer.domElement.clientWidth;
         const rH = renderer.domElement.clientHeight;
         const sA = worldPos.clone().project(camera);
         const sB = worldPosN.clone().project(camera);
-
-        // screen-space travel vector
         const dx = (sB.x - sA.x) * rW;
-        const dy = -(sB.y - sA.y) * rH; // flip NDC Y → screen Y
-
-        // Sprite nose drawn at canvas TOP = "up" in sprite UV = angle 0.
-        // atan2(dx, dy): rotates the "up" nose to point in travel direction.
-        // This is already correct as long as the texture nose IS at the top.
-        // Previously the texture nose was accidentally at the BOTTOM which
-        // caused the reversed direction. The makePlaneTexture above is correct.
+        const dy = -(sB.y - sA.y) * rH;
         planeMat.rotation = Math.atan2(dx, dy);
 
         // Pulse airport rings
@@ -485,46 +655,71 @@ export default function GlobePage() {
 
     animate();
 
-    // ─── FIX 3: Responsive — listen to resize and update camera + renderer
-    const onResize = () => {
-      const W2 = container.clientWidth  || window.innerWidth;
-      const H2 = container.clientHeight || window.innerHeight;
-      camera.aspect = W2 / H2;
-      camera.updateProjectionMatrix();
-      renderer.setSize(W2, H2);
-    };
-    window.addEventListener("resize", onResize);
-
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener("resize", onResize);
       renderer.dispose();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.isReady, fromCode, toCode]);
 
-  // ─── FIX 2: All visible text is derived from state that is identical on
-  //   server and client until isMounted is true, so no mismatch occurs.
-  const dotsStr = isMounted ? ".".repeat(dots) : "";
+  // ── Derived values — safe for SSR (cfg is null until mount) ──────────────
+  const dotsStr  = isMounted ? ".".repeat(dots) : "";
 
-  // ─── FIX 3: Responsive font sizes via clamp(), layout via flexbox.
-  //   No media queries needed — everything scales fluidly.
+  const statusMsg = !isMounted
+    ? "Locating route"
+    : phase === "rotating" || phase === "drawing"
+    ? `Locating route${dotsStr}`
+    : phase === "flying"
+    ? `Ranking the best value picks${dotsStr}`
+    : "Route locked in · Loading results…";
+
+  // While SSR or before mount, render a minimal shell that matches server output
+  // (no cfg-dependent inline styles that could differ). After mount cfg is set.
+  if (!cfg) {
+    return (
+      <div style={{
+        position: "fixed",
+        inset: 0,
+        background: "#040d1a",
+        overflow: "hidden",
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+      }}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap');* { box-sizing: border-box; }`}</style>
+        <div ref={mountRef} style={{ position: "absolute", inset: 0 }} />
+      </div>
+    );
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  // Safe to use cfg now — we're on the client
+  const isXs = cfg.bp === "xs";
+  const isSm = cfg.bp === "sm" || cfg.bp === "xs";
+
+  // Bottom info bar layout: on very small screens stack the route info
+  // vertically to avoid cramping
+  const useCompactBar = isXs;
+
   return (
     <div style={{
       position:   "fixed",
       inset:      0,
       background: "#040d1a",
       overflow:   "hidden",
-      fontFamily: "system-ui, sans-serif",
+      fontFamily: "'DM Sans', system-ui, sans-serif",
     }}>
-      {/* THREE.js canvas container */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap');
+        * { box-sizing: border-box; }
+      `}</style>
+
+      {/* THREE.js canvas mount */}
       <div ref={mountRef} style={{ position: "absolute", inset: 0 }} />
 
-      {/* Brand — top-centre */}
+      {/* ── Brand — top-centre ── */}
       <div style={{
         position:      "absolute",
-        top:           "clamp(14px, 3vw, 28px)",
+        top:           cfg.brandTop,
         left:          "50%",
         transform:     "translateX(-50%)",
         textAlign:     "center",
@@ -533,7 +728,7 @@ export default function GlobePage() {
         whiteSpace:    "nowrap",
       }}>
         <div style={{
-          fontSize:      "clamp(9px, 1.2vw, 11px)",
+          fontSize:      cfg.brandTopSize,
           fontWeight:    700,
           letterSpacing: "0.30em",
           color:         "rgba(255,255,255,0.65)",
@@ -541,7 +736,7 @@ export default function GlobePage() {
           KAIVO · OPERATOR MODE
         </div>
         <div style={{
-          fontSize:      "clamp(8px, 1vw, 10px)",
+          fontSize:      cfg.brandSubSize,
           color:         "rgba(255,255,255,0.30)",
           letterSpacing: "0.10em",
           marginTop:     3,
@@ -550,30 +745,28 @@ export default function GlobePage() {
         </div>
       </div>
 
-      {/* Airport label — FROM (only rendered client-side, after isMounted) */}
-      {isMounted && showDots && fromPos?.visible && (
+      {/* ── Airport label FROM ── */}
+      {showDots && fromPos?.visible && (
         <div style={{
           position:      "absolute",
           left:          fromPos.x,
           top:           fromPos.y,
-          transform:     "translate(14px, -50%)",
+          transform:     `translate(${cfg.labelOffset}px, -50%)`,
           pointerEvents: "none",
           zIndex:        20,
           display:       "flex",
           alignItems:    "center",
-          gap:           5,
-          opacity:       1,
-          transition:    "opacity 0.5s ease",
+          gap:           isXs ? 3 : 5,
         }}>
           <div style={{
-            width:        "clamp(6px, 1vw, 8px)",
-            height:       "clamp(6px, 1vw, 8px)",
+            width:        cfg.labelDotSize,
+            height:       cfg.labelDotSize,
             borderRadius: "50%",
             border:       "1.5px solid rgba(255,255,255,0.80)",
             flexShrink:   0,
           }} />
           <span style={{
-            fontSize:      "clamp(10px, 1.4vw, 12px)",
+            fontSize:      cfg.labelFontSize,
             fontWeight:    700,
             color:         "rgba(255,255,255,0.85)",
             letterSpacing: "0.06em",
@@ -584,30 +777,28 @@ export default function GlobePage() {
         </div>
       )}
 
-      {/* Airport label — TO */}
-      {isMounted && showDots && toPos?.visible && (
+      {/* ── Airport label TO ── */}
+      {showDots && toPos?.visible && (
         <div style={{
           position:      "absolute",
           left:          toPos.x,
           top:           toPos.y,
-          transform:     "translate(14px, -50%)",
+          transform:     `translate(${cfg.labelOffset}px, -50%)`,
           pointerEvents: "none",
           zIndex:        20,
           display:       "flex",
           alignItems:    "center",
-          gap:           5,
-          opacity:       1,
-          transition:    "opacity 0.5s ease",
+          gap:           isXs ? 3 : 5,
         }}>
           <div style={{
-            width:        "clamp(6px, 1vw, 8px)",
-            height:       "clamp(6px, 1vw, 8px)",
+            width:        cfg.labelDotSize,
+            height:       cfg.labelDotSize,
             borderRadius: "50%",
             border:       "1.5px solid rgba(255,255,255,0.80)",
             flexShrink:   0,
           }} />
           <span style={{
-            fontSize:      "clamp(10px, 1.4vw, 12px)",
+            fontSize:      cfg.labelFontSize,
             fontWeight:    700,
             color:         "rgba(255,255,255,0.85)",
             letterSpacing: "0.06em",
@@ -618,76 +809,203 @@ export default function GlobePage() {
         </div>
       )}
 
-      {/* Bottom bar — airport codes + status */}
+      {/* ── Bottom info bar ── */}
       <div style={{
         position:      "absolute",
         bottom:        0,
         left:          0,
         right:         0,
-        padding:       "0 clamp(16px, 4vw, 32px) clamp(16px, 4vw, 32px)",
+        padding:       cfg.bottomPad,
         pointerEvents: "none",
         zIndex:        10,
+        // Subtle gradient so text reads against any globe colour
+        background:    "linear-gradient(to top, rgba(4,13,26,0.92) 0%, rgba(4,13,26,0.70) 60%, transparent 100%)",
       }}>
-        <div style={{
-          display:        "flex",
-          justifyContent: "space-between",
-          alignItems:     "flex-end",
-          marginBottom:   "clamp(8px, 2vw, 16px)",
-        }}>
-          <span style={{
-            fontSize:      "clamp(22px, 5vw, 44px)",
-            fontWeight:    800,
-            color:         "rgba(255,255,255,0.90)",
-            letterSpacing: "0.08em",
-            lineHeight:    1,
+
+        {/* Airport codes row */}
+        {useCompactBar ? (
+          /* ── XS: vertical compact layout ── */
+          <div style={{
+            display:        "flex",
+            flexDirection:  "column",
+            alignItems:     "center",
+            gap:            6,
+            marginBottom:   8,
           }}>
-            {fromCode}
-          </span>
-          <span style={{
-            fontSize:      "clamp(22px, 5vw, 44px)",
-            fontWeight:    800,
-            color:         "rgba(255,255,255,0.90)",
-            letterSpacing: "0.08em",
-            lineHeight:    1,
+            {/* Route codes inline */}
+            <div style={{
+              display:     "flex",
+              alignItems:  "center",
+              gap:         10,
+            }}>
+              <span style={{
+                fontSize:   cfg.airportCodeSize,
+                fontFamily: "'Syne', sans-serif",
+                fontWeight: 800,
+                color:      "rgba(255,255,255,0.90)",
+                lineHeight: 1,
+              }}>
+                {fromCode}
+              </span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="rgba(255,255,255,0.35)">
+                <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" />
+              </svg>
+              <span style={{
+                fontSize:   cfg.airportCodeSize,
+                fontFamily: "'Syne', sans-serif",
+                fontWeight: 800,
+                color:      "rgba(255,255,255,0.90)",
+                lineHeight: 1,
+              }}>
+                {toCode}
+              </span>
+            </div>
+            {/* City names inline */}
+            <div style={{
+              display:    "flex",
+              gap:        6,
+              alignItems: "center",
+            }}>
+              <span style={{ fontSize: cfg.cityNameSize, color: "rgba(255,255,255,0.40)", fontWeight: 500 }}>
+                {fromCity}
+              </span>
+              <span style={{ fontSize: cfg.cityNameSize, color: "rgba(255,255,255,0.20)" }}>→</span>
+              <span style={{ fontSize: cfg.cityNameSize, color: "rgba(255,255,255,0.40)", fontWeight: 500 }}>
+                {toCity}
+              </span>
+            </div>
+            {/* Depart badge */}
+            <span style={{
+              fontSize:      "8px",
+              color:         "rgba(255,255,255,0.25)",
+              letterSpacing: "0.12em",
+              fontWeight:    600,
+              textTransform: "uppercase",
+            }}>
+              {depart}
+            </span>
+          </div>
+        ) : (
+          /* ── SM and up: horizontal three-column layout ── */
+          <div style={{
+            display:        "flex",
+            justifyContent: "space-between",
+            alignItems:     "flex-end",
+            marginBottom:   isSm ? 10 : "clamp(8px, 1.5vw, 16px)",
+            gap:            8,
           }}>
-            {toCode}
-          </span>
-        </div>
+            {/* FROM block */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-start", minWidth: 0 }}>
+              <span style={{
+                fontSize:      cfg.airportCodeSize,
+                fontFamily:    "'Syne', sans-serif",
+                fontWeight:    800,
+                color:         "rgba(255,255,255,0.90)",
+                letterSpacing: "0.06em",
+                lineHeight:    1,
+                display:       "block",
+              }}>
+                {fromCode}
+              </span>
+              <span style={{
+                fontSize:      cfg.cityNameSize,
+                color:         "rgba(255,255,255,0.40)",
+                letterSpacing: "0.05em",
+                fontWeight:    500,
+                whiteSpace:    "nowrap",
+                overflow:      "hidden",
+                textOverflow:  "ellipsis",
+                maxWidth:      "20vw",
+              }}>
+                {fromCity}
+              </span>
+            </div>
+
+            {/* Centre divider */}
+            <div style={{
+              display:        "flex",
+              flexDirection:  "column",
+              alignItems:     "center",
+              gap:            4,
+              flex:           1,
+              paddingBottom:  isSm ? 4 : 6,
+            }}>
+              <div style={{
+                height:     1,
+                width:      "100%",
+                background: "linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.20), rgba(255,255,255,0.05))",
+              }} />
+              <svg width={isSm ? 14 : 18} height={isSm ? 14 : 18} viewBox="0 0 24 24" fill="rgba(255,255,255,0.30)">
+                <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" />
+              </svg>
+              <span style={{
+                fontSize:      isSm ? "8px" : "9px",
+                color:         "rgba(255,255,255,0.25)",
+                letterSpacing: "0.12em",
+                fontWeight:    600,
+                textTransform: "uppercase",
+              }}>
+                {depart}
+              </span>
+            </div>
+
+            {/* TO block */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-end", minWidth: 0 }}>
+              <span style={{
+                fontSize:      cfg.airportCodeSize,
+                fontFamily:    "'Syne', sans-serif",
+                fontWeight:    800,
+                color:         "rgba(255,255,255,0.90)",
+                letterSpacing: "0.06em",
+                lineHeight:    1,
+                display:       "block",
+              }}>
+                {toCode}
+              </span>
+              <span style={{
+                fontSize:      cfg.cityNameSize,
+                color:         "rgba(255,255,255,0.40)",
+                letterSpacing: "0.05em",
+                fontWeight:    500,
+                whiteSpace:    "nowrap",
+                overflow:      "hidden",
+                textOverflow:  "ellipsis",
+                maxWidth:      "20vw",
+              }}>
+                {toCity}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Status row */}
         <div style={{
-          display:         "flex",
-          alignItems:      "center",
-          justifyContent:  "center",
-          gap:             8,
+          display:        "flex",
+          alignItems:     "center",
+          justifyContent: "center",
+          gap:            8,
+          paddingBottom:  isXs ? 2 : 0,
         }}>
           <div style={{
-            width:        "clamp(5px, 1vw, 6px)",
-            height:       "clamp(5px, 1vw, 6px)",
+            width:        cfg.statusDotSize,
+            height:       cfg.statusDotSize,
             borderRadius: "50%",
             background:   "#c8f135",
             flexShrink:   0,
           }} />
           <span style={{
-            fontSize:      "clamp(10px, 1.4vw, 12px)",
+            fontSize:      cfg.statusFontSize,
             color:         "rgba(255,255,255,0.38)",
             letterSpacing: "0.06em",
             textAlign:     "center",
           }}>
-            {/* ─── FIX 2: guard with isMounted so SSR and first client render match */}
-            {!isMounted
-              ? "Locating route"
-              : phase === "rotating" || phase === "drawing"
-              ? `Locating route${dotsStr}`
-              : phase === "flying"
-              ? `Ranking the best value picks${dotsStr}`
-              : "Route locked in · Loading results…"}
+            {statusMsg}
           </span>
         </div>
       </div>
 
-      {/* Done overlay — only shown client-side */}
-      {isMounted && phase === "done" && (
+      {/* ── Route locked — done overlay ── */}
+      {phase === "done" && (
         <div style={{
           position:       "absolute",
           inset:          0,
@@ -696,28 +1014,31 @@ export default function GlobePage() {
           justifyContent: "center",
           pointerEvents:  "none",
           zIndex:         30,
+          padding:        "0 16px",
         }}>
           <div style={{
-            background:    "rgba(4,13,26,0.88)",
-            border:        "1px solid rgba(255,255,255,0.12)",
-            borderRadius:  "clamp(12px, 2vw, 20px)",
-            padding:       "clamp(16px, 3vw, 26px) clamp(24px, 5vw, 52px)",
-            textAlign:     "center",
-            backdropFilter:"blur(20px)",
-            boxShadow:     "0 0 60px rgba(0,0,0,0.6)",
-            maxWidth:      "90vw",
+            background:     "rgba(4,13,26,0.88)",
+            border:         "1px solid rgba(255,255,255,0.12)",
+            borderRadius:   isXs ? 12 : isSm ? 16 : "clamp(12px, 2vw, 20px)",
+            padding:        cfg.doneCardPad,
+            textAlign:      "center",
+            backdropFilter: "blur(20px)",
+            boxShadow:      "0 0 60px rgba(0,0,0,0.6)",
+            maxWidth:       "88vw",
+            width:          "fit-content",
           }}>
             <div style={{
-              fontSize:      "clamp(8px, 1.2vw, 10px)",
+              fontSize:      isXs ? "8px" : "clamp(8px, 1vw, 10px)",
               fontWeight:    700,
               letterSpacing: "0.26em",
               color:         "rgba(200,241,53,0.75)",
-              marginBottom:  "clamp(8px, 1.5vw, 12px)",
+              marginBottom:  isXs ? 8 : "clamp(8px, 1.2vw, 12px)",
             }}>
               ROUTE LOCKED IN
             </div>
             <div style={{
-              fontSize:      "clamp(16px, 3.5vw, 28px)",
+              fontSize:      cfg.doneCodeSize,
+              fontFamily:    "'Syne', sans-serif",
               fontWeight:    800,
               color:         "#fff",
               letterSpacing: "0.08em",
@@ -725,9 +1046,9 @@ export default function GlobePage() {
               {fromCode} → {toCode}
             </div>
             <div style={{
-              fontSize:   "clamp(10px, 1.4vw, 12px)",
-              color:      "rgba(255,255,255,0.35)",
-              marginTop:  "clamp(8px, 1.5vw, 12px)",
+              fontSize:  cfg.doneSubSize,
+              color:     "rgba(255,255,255,0.35)",
+              marginTop: isXs ? 8 : "clamp(8px, 1.2vw, 12px)",
             }}>
               Loading flight results…
             </div>
